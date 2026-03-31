@@ -1,0 +1,12 @@
+{
+  "name": "byd-proxy",
+  "version": "1.0.0",
+  "description": "SAP Business ByDesign SOAP proxy — fixes CORS for browser apps",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=16"
+  }
+}
