@@ -2,20 +2,15 @@ const https = require('https');
 const http  = require('http');
 const PORT  = process.env.PORT || 3000;
 
-// ── SAP ByD credentials ────────────────────────────────────────────────────
 const BYD_HOST = 'my433447.businessbydesign.cloud.sap';
 const BYD_USER = '_DEV';
 const BYD_PASS = 'Welcome123';
 
-// ── Endpoint 1: QUERY production lots ─────────────────────────────────────
-const QUERY_PATH   = '/sap/bc/srt/scs/sap/queryproductionlotisiin?sap-vhost=my433447.businessbydesign.cloud.sap';
-const QUERY_ACTION = 'http://sap.com/xi/A1S/Global/QueryProductionLotISIIn/FindByElementsRequest';
-
-// ── Endpoint 2: CONFIRM production lots ───────────────────────────────────
+const QUERY_PATH     = '/sap/bc/srt/scs/sap/queryproductionlotisiin?sap-vhost=my433447.businessbydesign.cloud.sap';
+const QUERY_ACTION   = 'http://sap.com/xi/A1S/Global/QueryProductionLotISIIn/FindByElementsRequest';
 const CONFIRM_PATH   = '/sap/bc/srt/scs/sap/manageproductionlotsin?sap-vhost=my433447.businessbydesign.cloud.sap';
 const CONFIRM_ACTION = 'http://sap.com/xi/A1S/Global/ManageProductionLotsIn/MaintainBundle_V1Request';
 
-// ── Helper: forward request to ByD ────────────────────────────────────────
 function callByD(path, soapAction, soapBody, res) {
   const auth = Buffer.from(`${BYD_USER}:${BYD_PASS}`).toString('base64');
   const options = {
@@ -31,7 +26,7 @@ function callByD(path, soapAction, soapBody, res) {
     let xml = '';
     proxyRes.on('data', c => xml += c);
     proxyRes.on('end', () => {
-      console.log(`ByD [${path.includes('manage')?'CONFIRM':'QUERY'}] HTTP ${proxyRes.statusCode}`);
+      console.log(`[${path.includes('manage')?'CONFIRM':'QUERY'}] HTTP ${proxyRes.statusCode}`);
       res.writeHead(proxyRes.statusCode, { 'Content-Type':'text/xml', 'Access-Control-Allow-Origin':'*' });
       res.end(xml);
     });
@@ -45,49 +40,70 @@ function callByD(path, soapAction, soapBody, res) {
   req.end();
 }
 
-// ── SOAP: Query lots ───────────────────────────────────────────────────────
-// FIX 1: correct element is MaximumNumberValue (not MaximumNumberOfResults)
-// FIX 2: exclude Completed(4), Cancelled(5), Closed(6) at SAP level
+// ── CORRECT SOAP structure from WSDL:
+// ProductionLotByElementsQuery_sync
+//   ProductionLotSelectionByElements  ← all filters go INSIDE this wrapper
+//     SelectionByProductionLotStatusCode (one per status)
+//     SelectionByProductionLotDates (optional)
+//   ProcessingConditions              ← count goes INSIDE this wrapper
+//     QueryHitsMaximumNumberValue
+//     QueryHitsUnlimitedIndicator
 function buildQuerySOAP(count, dateFrom, dateTo) {
   const fromPart = dateFrom
-    ? `<ns1:ProductionStartDateFromDate>${dateFrom}T00:00:00Z</ns1:ProductionStartDateFromDate>` : '';
-  const toPart = dateTo
-    ? `<ns1:ProductionStartDateToDate>${dateTo}T23:59:59Z</ns1:ProductionStartDateToDate>` : '';
+    ? `<ns2:SelectionByProductionLotCreationDateTime>
+        <ns2:InclusionExclusionCode>I</ns2:InclusionExclusionCode>
+        <ns2:IntervalBoundaryTypeCode>1</ns2:IntervalBoundaryTypeCode>
+        <ns2:LowerBoundaryDateTime>${dateFrom}T00:00:00Z</ns2:LowerBoundaryDateTime>
+       </ns2:SelectionByProductionLotCreationDateTime>` : '';
 
-  // Include only In Preparation(1), Released(2), In Process(3)
+  const toPart = dateTo
+    ? `<ns2:SelectionByProductionLotCreationDateTime>
+        <ns2:InclusionExclusionCode>I</ns2:InclusionExclusionCode>
+        <ns2:IntervalBoundaryTypeCode>2</ns2:IntervalBoundaryTypeCode>
+        <ns2:UpperBoundaryDateTime>${dateTo}T23:59:59Z</ns2:UpperBoundaryDateTime>
+       </ns2:SelectionByProductionLotCreationDateTime>` : '';
+
+  // Include only: 1=In Preparation, 2=Released, 3=In Process
+  // Exclude: 4=Completed, 5=Cancelled, 6=Closed
   const statusFilter = `
-      <ns1:SelectionByProductionLotStatusCode>
-        <ns1:InclusionExclusionCode>I</ns1:InclusionExclusionCode>
-        <ns1:IntervalBoundaryTypeCode>1</ns1:IntervalBoundaryTypeCode>
-        <ns1:LifeCycleStatusCode>1</ns1:LifeCycleStatusCode>
-      </ns1:SelectionByProductionLotStatusCode>
-      <ns1:SelectionByProductionLotStatusCode>
-        <ns1:InclusionExclusionCode>I</ns1:InclusionExclusionCode>
-        <ns1:IntervalBoundaryTypeCode>1</ns1:IntervalBoundaryTypeCode>
-        <ns1:LifeCycleStatusCode>2</ns1:LifeCycleStatusCode>
-      </ns1:SelectionByProductionLotStatusCode>
-      <ns1:SelectionByProductionLotStatusCode>
-        <ns1:InclusionExclusionCode>I</ns1:InclusionExclusionCode>
-        <ns1:IntervalBoundaryTypeCode>1</ns1:IntervalBoundaryTypeCode>
-        <ns1:LifeCycleStatusCode>3</ns1:LifeCycleStatusCode>
-      </ns1:SelectionByProductionLotStatusCode>`;
+    <ns2:SelectionByProductionLotStatusCode>
+      <ns2:InclusionExclusionCode>I</ns2:InclusionExclusionCode>
+      <ns2:IntervalBoundaryTypeCode>1</ns2:IntervalBoundaryTypeCode>
+      <ns2:LifeCycleStatusCode>1</ns2:LifeCycleStatusCode>
+    </ns2:SelectionByProductionLotStatusCode>
+    <ns2:SelectionByProductionLotStatusCode>
+      <ns2:InclusionExclusionCode>I</ns2:InclusionExclusionCode>
+      <ns2:IntervalBoundaryTypeCode>1</ns2:IntervalBoundaryTypeCode>
+      <ns2:LifeCycleStatusCode>2</ns2:LifeCycleStatusCode>
+    </ns2:SelectionByProductionLotStatusCode>
+    <ns2:SelectionByProductionLotStatusCode>
+      <ns2:InclusionExclusionCode>I</ns2:InclusionExclusionCode>
+      <ns2:IntervalBoundaryTypeCode>1</ns2:IntervalBoundaryTypeCode>
+      <ns2:LifeCycleStatusCode>3</ns2:LifeCycleStatusCode>
+    </ns2:SelectionByProductionLotStatusCode>`;
 
   return `<?xml version="1.0" encoding="utf-8"?>
-<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ns1="http://sap.com/xi/SAPGlobal20/Global">
+<soapenv:Envelope
+  xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+  xmlns:ns1="http://sap.com/xi/SAPGlobal20/Global"
+  xmlns:ns2="http://sap.com/xi/A1S/Global">
   <soapenv:Header/>
   <soapenv:Body>
     <ns1:ProductionLotByElementsQuery_sync>
-      <ns1:MaximumNumberValue>${count}</ns1:MaximumNumberValue>
-      ${fromPart}
-      ${toPart}
-      ${statusFilter}
+      <ns2:ProductionLotSelectionByElements>
+        ${statusFilter}
+        ${fromPart}
+        ${toPart}
+      </ns2:ProductionLotSelectionByElements>
+      <ns2:ProcessingConditions>
+        <ns2:QueryHitsMaximumNumberValue>${count}</ns2:QueryHitsMaximumNumberValue>
+        <ns2:QueryHitsUnlimitedIndicator>false</ns2:QueryHitsUnlimitedIndicator>
+      </ns2:ProcessingConditions>
     </ns1:ProductionLotByElementsQuery_sync>
   </soapenv:Body>
 </soapenv:Envelope>`;
 }
 
-// ── SOAP: Confirm a task ───────────────────────────────────────────────────
-// FIX 3: use correct SAP typo 'ProducionTaskUUID' (missing 'd') as per WSDL
 function buildConfirmSOAP(lotId, lotUUID, cgUUID, taskId, taskUUID, confirmedQty, unitCode, finished) {
   const msgId = 'MSG-' + Date.now();
   const now = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
@@ -125,7 +141,6 @@ function buildConfirmSOAP(lotId, lotUUID, cgUUID, taskId, taskUUID, confirmedQty
 </soapenv:Envelope>`;
 }
 
-// ── HTTP Server ────────────────────────────────────────────────────────────
 http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
@@ -164,10 +179,10 @@ http.createServer((req, res) => {
       return;
     }
 
-    res.writeHead(404); res.end('POST /sync  |  POST /confirm  |  GET /health');
+    res.writeHead(404); res.end('POST /sync | POST /confirm | GET /health');
   });
 
 }).listen(PORT, () => {
-  console.log(`✅ ByD Proxy — port ${PORT}`);
-  console.log(`   Fixes: MaximumNumberValue | status filter | ProducionTaskUUID`);
+  console.log(`✅ ByD Proxy running — port ${PORT}`);
+  console.log(`   Fixed: correct SOAP structure, QueryHitsMaximumNumberValue, status filter`);
 });
