@@ -104,9 +104,12 @@ function buildQuerySOAP(count, dateFrom, dateTo) {
 </soapenv:Envelope>`;
 }
 
-function buildConfirmSOAP(lotId, lotUUID, cgUUID, taskId, taskUUID, confirmedQty, unitCode, finished) {
+function buildConfirmSOAP(lotId, lotUUID, cgUUID, taskId, taskUUID, rpUUID, rpID, confirmedQty, unitCode, finished) {
   const msgId = 'MSG-' + Date.now();
   const now = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+  // Include ReportingPointUUID if available - SAP needs it to find the right reporting point
+  const rpUUIDLine  = rpUUID ? `<ns2:ReportingPointUUID>${rpUUID}</ns2:ReportingPointUUID>` : '';
+  const rpIDLine    = rpID   ? `<ns2:ReportingPointID>${rpID}</ns2:ReportingPointID>`       : '';
   return `<?xml version="1.0" encoding="utf-8"?>
 <soapenv:Envelope
   xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
@@ -131,6 +134,8 @@ function buildConfirmSOAP(lotId, lotUUID, cgUUID, taskId, taskUUID, confirmedQty
             <ns2:ConfirmationCompletedRequiredIndicator>${finished ? 'true' : 'false'}</ns2:ConfirmationCompletedRequiredIndicator>
           </ns2:ProductionTask>
           <ns2:ReportingPoint>
+            ${rpUUIDLine}
+            ${rpIDLine}
             <ns2:ConfirmedQuantity unitCode="${unitCode}">${confirmedQty}</ns2:ConfirmedQuantity>
             <ns2:ConfirmationFinishedIndicator>${finished ? 'true' : 'false'}</ns2:ConfirmationFinishedIndicator>
           </ns2:ReportingPoint>
@@ -168,14 +173,14 @@ http.createServer((req, res) => {
     if (req.url === '/confirm' && req.method === 'POST') {
       let p = {};
       try { p = JSON.parse(body); } catch(_) {}
-      const { lotId, lotUUID, cgUUID, taskId, taskUUID, confirmedQty=1, unitCode='EA', finished=true } = p;
-      console.log(`CONFIRM → lotId=${lotId} taskId=${taskId} qty=${confirmedQty} ${unitCode}`);
+      const { lotId, lotUUID, cgUUID, taskId, taskUUID, rpUUID='', rpID='', confirmedQty=1, unitCode='EA', finished=true } = p;
+      console.log(`CONFIRM → lotId=${lotId} taskId=${taskId} rpUUID=${rpUUID||'none'} qty=${confirmedQty} ${unitCode}`);
       if (!lotId || !lotUUID || !cgUUID || !taskId || !taskUUID) {
         res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
         res.end(JSON.stringify({ error: 'Missing: lotId, lotUUID, cgUUID, taskId, taskUUID', received: p }));
         return;
       }
-      callByD(CONFIRM_PATH, CONFIRM_ACTION, buildConfirmSOAP(lotId, lotUUID, cgUUID, taskId, taskUUID, confirmedQty, unitCode, finished), res);
+      callByD(CONFIRM_PATH, CONFIRM_ACTION, buildConfirmSOAP(lotId, lotUUID, cgUUID, taskId, taskUUID, rpUUID, rpID, confirmedQty, unitCode, finished), res);
       return;
     }
 
