@@ -168,6 +168,9 @@ http.createServer((req, res) => {
       console.log(`SYNC count=${count}`);
       try {
         const r = await callByD(QUERY_PATH, QUERY_ACTION, buildQuerySOAP(count, dateFrom, dateTo));
+        // Log first ProducionTaskUUID found to verify parsing
+        const match = r.xml.match(/<ProducionTaskUUID>([^<]+)<\/ProducionTaskUUID>/);
+        console.log('Sample ProducionTaskUUID from response:', match ? match[1] : 'NOT FOUND');
         sendResponse(res, r.status, r.xml);
       } catch(e) { sendError(res, 502, e.message); }
       return;
