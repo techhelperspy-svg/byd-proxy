@@ -47,7 +47,7 @@ function sendError(res, status, msg) {
 }
 
 // ── QUERY SOAP ────────────────────────────────────────────────────────────
-function buildQuerySOAP(count, dateFrom, dateTo) {
+function buildQuerySOAP(count, dateFrom, dateTo, orderId) {
   const fromPart = dateFrom ? `
         <ns2:SelectionByProductionLotCreationDateTime>
           <ns2:InclusionExclusionCode>I</ns2:InclusionExclusionCode>
@@ -60,6 +60,14 @@ function buildQuerySOAP(count, dateFrom, dateTo) {
           <ns2:IntervalBoundaryTypeCode>2</ns2:IntervalBoundaryTypeCode>
           <ns2:UpperBoundaryDateTime>${dateTo}T23:59:59Z</ns2:UpperBoundaryDateTime>
         </ns2:SelectionByProductionLotCreationDateTime>` : '';
+
+  const orderIdPart = orderId ? `
+        <ns2:SelectionByProductionOrderID>
+          <ns2:InclusionExclusionCode>I</ns2:InclusionExclusionCode>
+          <ns2:IntervalBoundaryTypeCode>1</ns2:IntervalBoundaryTypeCode>
+          <ns2:LowerBoundaryProductionOrderID>${orderId}</ns2:LowerBoundaryProductionOrderID>
+          <ns2:UpperBoundaryProductionOrderID>${orderId}</ns2:UpperBoundaryProductionOrderID>
+        </ns2:SelectionByProductionOrderID>` : '';
 
   return `<?xml version="1.0" encoding="utf-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
@@ -86,6 +94,7 @@ function buildQuerySOAP(count, dateFrom, dateTo) {
         </ns2:SelectionByProductionLotStatusCode>
         ${fromPart}
         ${toPart}
+        ${orderIdPart}
       </ns2:ProductionLotSelectionByElements>
       <ns2:ProcessingConditions>
         <ns2:QueryHitsMaximumNumberValue>${count}</ns2:QueryHitsMaximumNumberValue>
@@ -164,10 +173,11 @@ http.createServer((req, res) => {
     // ── /sync ──────────────────────────────────────────────────────────────
     if (req.url === '/sync' && req.method === 'POST') {
       let count = 100, dateFrom = '', dateTo = '';
-      try { const p = JSON.parse(body); count=p.count||100; dateFrom=p.dateFrom||''; dateTo=p.dateTo||''; } catch(_) {}
-      console.log(`SYNC count=${count}`);
+      let orderId = '';
+      try { const p = JSON.parse(body); count=p.count||100; dateFrom=p.dateFrom||''; dateTo=p.dateTo||''; orderId=p.orderId||''; } catch(_) {}
+      console.log(`SYNC count=${count} orderId=${orderId||'any'}`);
       try {
-        const r = await callByD(QUERY_PATH, QUERY_ACTION, buildQuerySOAP(count, dateFrom, dateTo));
+        const r = await callByD(QUERY_PATH, QUERY_ACTION, buildQuerySOAP(count, dateFrom, dateTo, orderId));
         // Log first ProducionTaskUUID found to verify parsing
         const match = r.xml.match(/<ProducionTaskUUID>([^<]+)<\/ProducionTaskUUID>/);
         console.log('Sample ProducionTaskUUID from response:', match ? match[1] : 'NOT FOUND');
