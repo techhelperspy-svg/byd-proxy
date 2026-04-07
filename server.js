@@ -61,13 +61,8 @@ function buildQuerySOAP(count, dateFrom, dateTo, orderId) {
           <ns2:UpperBoundaryDateTime>${dateTo}T23:59:59Z</ns2:UpperBoundaryDateTime>
         </ns2:SelectionByProductionLotCreationDateTime>` : '';
 
-  const orderIdPart = orderId ? `
-        <ns2:SelectionByProductionOrderID>
-          <ns2:InclusionExclusionCode>I</ns2:InclusionExclusionCode>
-          <ns2:IntervalBoundaryTypeCode>1</ns2:IntervalBoundaryTypeCode>
-          <ns2:LowerBoundaryProductionOrderID>${orderId}</ns2:LowerBoundaryProductionOrderID>
-          <ns2:UpperBoundaryProductionOrderID>${orderId}</ns2:UpperBoundaryProductionOrderID>
-        </ns2:SelectionByProductionOrderID>` : '';
+  // Order ID filtering is done client-side for reliability
+  const orderIdPart = '';
 
   return `<?xml version="1.0" encoding="utf-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
